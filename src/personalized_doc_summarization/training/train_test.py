@@ -1,10 +1,6 @@
-import numpy as np
-import pandas as pd
 import argparse
-import pickle
 import torch
-import random_forest_impl
-import dataset_utils
+from src.personalized_doc_summarization.models import random_forest_impl
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
