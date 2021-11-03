@@ -54,7 +54,7 @@ def build_test_dataset(input_data, dest_path):
 intent_list=[]
 my_path = "../../../Dataset/"
 for file in listdir("../../../Dataset"):
-    dest_path = "../../../Intent_Dataset/"
+    dest_path = "../../../data/"
     file_name = join(my_path,file)
     if isfile(file_name) and file.startswith("user"):
         f = open(join(my_path,file))

@@ -1,0 +1,6 @@
+scipy
+tqdm
+wandb
+pandas
+numpy
+typer
