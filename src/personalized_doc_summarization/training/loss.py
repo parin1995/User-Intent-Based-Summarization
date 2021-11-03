@@ -10,9 +10,13 @@ __all__ =[
 
 class BCEWithWeightedLoss(Module):
     def __init__(self, positive_weight: float):
-        self. pos_weight = positive_weight
+        self.pos_weight = positive_weight
 
-    def forward(self, pos_loss: Tensor, neg_loss: Tensor):
+    def forward(self, pos_probs: Tensor, neg_probs: Tensor):
+        """
+                pos_probs: Tensor => (batch_size,)
+                neg_probs: Tensor => (batch_size*neg_ratio,)
+        """
         pass
 
 
