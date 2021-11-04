@@ -1,6 +1,8 @@
 import torch
 from torch import Tensor, LongTensor
 import wandb
+from pathlib import Path
+from ..utils.train_utils import cuda_if_available
 
 
 def train_setup(config: dict):
@@ -12,3 +14,5 @@ def train_setup(config: dict):
         run_dir = Path(wandb.run.dir)
     else:
         run_dir = Path(".")
+
+    device = cuda_if_available(use_cuda=config["cuda"])

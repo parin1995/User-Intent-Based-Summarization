@@ -1,1 +1,1 @@
-TEST_PATH = test/
+TEST_PATH = "test/"

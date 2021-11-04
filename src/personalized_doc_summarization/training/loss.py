@@ -10,14 +10,24 @@ __all__ =[
 
 class BCEWithWeightedLoss(Module):
     def __init__(self, positive_weight: float):
+        super().__init__()
         self.pos_weight = positive_weight
 
-    def forward(self, pos_probs: Tensor, neg_probs: Tensor):
+    def forward(self, probs: Tensor, num_pos: int = None, labels: Tensor = None, eval: bool = False):
         """
-                pos_probs: Tensor => (batch_size,)
-                neg_probs: Tensor => (batch_size*neg_ratio,)
+                pos_probs: Tensor => (num_pos,)
+                neg_probs: Tensor => (num_pos*neg_ratio,)
         """
-        pass
+        if not eval:
+            pos_probs = probs[:num_pos]
+            neg_probs = probs[num_pos+1:]
+            # TODO: Use the formula discussed in the ipad
+            # This is to calculate the training loss
+        else:
+            # TODO: Use the Normal Binary Cross Entropy Formula (But Weighted as in the if condition)
+            #  with the labels parameter and the probs argument
+            # This is to calculate the Validation loss
+            pass
 
 
 # Example Here:

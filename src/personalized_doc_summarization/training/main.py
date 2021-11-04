@@ -1,6 +1,6 @@
 import typer
 from typing import List, Optional
-from .setup import train_setup
+from .train import train_setup
 
 app = typer.Typer(help="Training Parameters for Personalized Document Summarization")
 
@@ -15,7 +15,8 @@ def train(
 ):
     config = {}
     config["data_dir"] = data_dir
-    config["train_file"] = train_file_name
+    config["train_file"] = data_dir + "/" + train_file_name
+    config["test_dir"] = data_dir + "/test/"
     config["epoch"] = epoch
     config["learning_rate"] = learning_rate
     config["cuda"] = cuda
