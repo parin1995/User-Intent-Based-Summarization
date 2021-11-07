@@ -1,5 +1,6 @@
 import warnings
 
+import transformers
 import torch
 from torch.nn import Module
 from torch.optim import Optimizer
@@ -84,6 +85,8 @@ class TrainLooper(object):
                  logger: Logger,
                  save_model: Callable,
                  summary_func: Callable,
+                 early_stopping: Callable,
+                 scheduler: transformers.get_linear_schedule_with_warmup,
                  log_interval: Optional[Union[IntervalConditional, int]] = None
                  ):
         self.model = model
@@ -97,6 +100,8 @@ class TrainLooper(object):
         self.log_interval = log_interval
         self.save_model = save_model
         self.summary_func = summary_func
+        self.early_stopping = early_stopping
+        self.scheduler = scheduler
 
         self.running_loss = []
         self.looper_metrics = {"Total Examples": 0}
@@ -126,7 +131,7 @@ class TrainLooper(object):
             self.model.load_state_dict(self.save_model.best_model_state_dict)
             self.model.to(previous_device)
 
-            return self.model
+            return self.model, self.best_metrics
 
     def train_loop(self, epoch: int):
         examples_this_epoch = 0
@@ -146,7 +151,28 @@ class TrainLooper(object):
             examples_this_epoch += num_pos_in_batch
             num_batch_passed += 1
 
+            if torch.isnan(loss).any():
+                raise StopLoopingException("NaNs in loss")
+
             loss.backward()
+
+            if self.scheduler is not None:
+                self.scheduler.step()
+                if len(self.opt.param_groups) == 1:
+                    self.looper_metrics[f"Learning Rate"] = self.opt.param_groups[0][
+                        "lr"
+                    ]
+                else:
+                    for i, param_group in enumerate(self.opt.param_groups):
+                        self.looper_metrics[f"Learning Rate (Group {i})"] = param_group[
+                            "lr"
+                        ]
+
+            # for param in self.model.parameters():
+            #     if param.grad is not None:
+            #         if torch.isnan(param.grad).any():
+            #             raise StopLoopingException("NaNs in grad")
+
             self.opt.step()
 
             last_log = self.log_interval.last

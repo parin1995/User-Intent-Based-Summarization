@@ -1,19 +1,21 @@
 import torch
-from torch import Tensor, LongTensor
 import wandb
 import numpy as np
+import uuid
 import random
+import json
 from pathlib import Path
-from ..utils.train_utils import cuda_if_available
-from dataset import DatasetUniformNegatives, DocumentTestSet
+from ..utils.train_utils import cuda_if_available, EarlyStopping, ModelCheckpoint
+from dataset import DatasetUniformNegatives, DatasetValidation
 from loss import BCEWithWeightedLoss, BCELoss
-from loopers import TrainLooper, TestLooper, EvalLooper
+from loopers import TrainLooper, EvalLooper
 from ..models.bert import FineTuneBert
 from ..utils.tensordataloader import TensorDataLoader
 from ..utils.loggers import WandBLogger, Logger
 
 import transformers as ppb  # pytorch transformers
 from transformers import AdamW, get_linear_schedule_with_warmup
+
 
 def set_seed(seed_value=42):
     """Set seed for reproducibility."""
@@ -49,9 +51,14 @@ def train_setup(config: dict):
         device=device,
         tokenizer=tokenizer
     )
-    val_dataset = DatasetValidation.from
     print("Loaded Training Data")
 
+    val_dataset = DatasetValidation.from_csv(
+        val_dir=config["val_dir"],
+        tokenizer=tokenizer,
+        device=device
+    )
+    print("Loaded Val Data")
 
     model = FineTuneBert(bert_model=bert_model,
                          input_dim=768,
@@ -65,7 +72,7 @@ def train_setup(config: dict):
         loss_function = BCELoss()
 
     train_dataloader = TensorDataLoader(
-        train_dataset, batch_size=2**config["log_batch_size"], shuffle=True
+        train_dataset, batch_size=2 ** config["log_batch_size"], shuffle=True
     )
 
     # Creating Optimizer
@@ -79,18 +86,56 @@ def train_setup(config: dict):
                                                 num_warmup_steps=0,  # Default value
                                                 num_training_steps=total_steps)
 
-    eval_loopers = []
-    eval_loopers.append(
+    eval_loopers = [
         EvalLooper(
             model=model,
-            batchsize=2**config["log_batch_size"],
+            batchsize=2 ** config["log_batch_size"],
             logger=logger,
             summary_func=summary_func,
             dataset=val_dataset
         )
+    ]
+
+    train_looper = TrainLooper(
+        model=model,
+        opt=optimizer,
+        loss_func=loss_function,
+        dl=train_dataloader,
+        learning_rate=config["learning_rate"],
+        epochs=config["epochs"],
+        eval_looper=eval_loopers,
+        logger=logger,
+        save_model=ModelCheckpoint(run_dir),
+        early_stopping=EarlyStopping("Loss", config["patience"]),
+        summary_func=summary_func,
+        scheduler=scheduler
     )
 
+    best_model, best_metrics = train_looper.loop()
 
+    save_model_metrics(best_model, best_metrics, config)
+
+    print("Training Complete!!!")
+
+
+def save_model_metrics(best_model, best_metrics, config):
+    best_model_state_dict = {
+        k: v.detach().cpu().clone() for k, v in best_model.state_dict().items()
+    }
+    if config["wandb"]:
+        random_hex = wandb.run.id
+    else:
+        random_hex = uuid.uuid4().hex
+
+    if config["output_dir"] is None:
+        output_dir = f'models/{random_hex}/'
+
+    torch.save(best_model_state_dict, output_dir + "trained_model.pt")
+
+    with open(f"{output_dir}/best_metrics.metric", "w", ) as f:
+        output = json.dumps(dict(config))
+        f.write(f"{output}\n")
+        f.write(json.dumps(best_metrics))
 
 
 def setup_bert(config: dict):

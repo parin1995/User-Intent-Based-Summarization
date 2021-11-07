@@ -19,7 +19,9 @@ def train(
         seed: int = typer.Option(42),
         loss_fn: str = typer.Option("UnweightedBCE"),
         hidden_dim: int = typer.Option(50),
-        log_batch_size: int = typer.Option(3)
+        log_batch_size: int = typer.Option(3),
+        patience: int = typer.Option(10),
+        output_dir: str = typer.Option(None)
 ):
     config = {}
 
@@ -43,6 +45,8 @@ def train(
     config["loss_fn"] = loss_fn
     config["hidden_dim"] = hidden_dim
     config["log_batch_size"] = log_batch_size
+    config["patience"] = patience
+    config["output_dir"] = output_dir
 
     # Setup Training
     train_setup(config)
