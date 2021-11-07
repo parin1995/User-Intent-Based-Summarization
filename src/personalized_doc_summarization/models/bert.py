@@ -10,11 +10,11 @@ __all__ = [
 
 
 class FineTuneBert(Module):
-    def __init__(self, bert_model, pretrained_weights, input_dim: int, hidden_dim: int = None,
+    def __init__(self, bert_model, input_dim: int, hidden_dim: int = None,
                  output_dim: int = 1, freeze_bert: bool = True):
 
         super().__init__()
-        self.bert = bert_model.from_pretrained(pretrained_weights)
+        self.bert = bert_model
         self.fc1 = Linear(input_dim, output_dim)
         # self.relu1 = ReLU()
         # self.fc2 = Linear(hidden_dim, output_dim)

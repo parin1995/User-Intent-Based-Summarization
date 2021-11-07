@@ -12,7 +12,8 @@ import time
 
 from ..utils.exceptions import StopLoopingException, EarlyStoppingException
 from ..utils.train_utils import IntervalConditional
-from .metrics import calculate_optimal_F1, calculate_rouge_scores
+from .metrics import calculate_optimal_F1, calculate_rouge_scores, calculate_test_F1
+from .dataset import DatasetValidation, DatasetTest
 
 import torch
 from torch.nn import Module
@@ -26,7 +27,7 @@ class EvalLooper(object):
                  batchsize: int,
                  logger: Logger,
                  summary_func: Callable,
-                 dataset: Module = None):
+                 dataset: DatasetValidation = None):
 
         self.model = model
         self.batch_size = batchsize
@@ -34,14 +35,14 @@ class EvalLooper(object):
         self.summary_func = summary_func
         self.dataset = dataset
 
-
     def loop(self, eval_run: str):
         self.model.eval()
         if eval_run == "validation":
             sent_ids = self.dataset.val_sent_ids
-            attention_masks = self.dataset.val_attention_masks
+            attention_masks = self.dataset.val_masks
+            val_data = self.dataset.val_data
 
-        ground_truth = self.dataset.get_ground_truth()
+        ground_truth = self.dataset.labels
         prediction_scores = np.zeros(ground_truth.shape)
 
         number_of_entries = sent_ids.shape[0]
@@ -65,8 +66,10 @@ class EvalLooper(object):
                 ground_truth.flatten(), prediction_scores.flatten()
             )
             metrics["val_loss"] = val_loss
-            predictions = prediction_scores > metrics["threshold"]
-            # TODO: rouge scores by joining these predictions from the eval_dataset
+            prediction_labels = prediction_scores > metrics["threshold"]
+            rouge_scores = calculate_rouge_scores(ground_truth.flatten(), prediction_labels, val_data)
+            metrics.update(rouge_scores)
+            return metrics
 
 class TrainLooper(object):
 
@@ -170,10 +173,6 @@ class TrainLooper(object):
                 self.logger.collect(
                     {
                         **{
-                            f"[Train_Eval] {metric_name}": value
-                            for metric_name, value in metrics["train_eval"].items()
-                        },
-                        **{
                             f"[Train] Mean_Train_Loss": metrics["Mean_Train_Loss"]
                         },
                         **{
@@ -189,6 +188,7 @@ class TrainLooper(object):
                 self.update_best_metrics(metrics)
                 self.save_if_best_(self.best_metrics["F1"])
                 self.early_stopping(self.best_metrics["F1"])
+                self.model.train()
 
     def update_best_metrics(self, metrics: dict[str, float]) -> None:
         for name, comparison in self.best_metrics_comparison_functions.items():
@@ -219,8 +219,58 @@ class TrainLooper(object):
 
 class TestLooper(object):
 
-    def __init__(self):
-        pass
+    def __init__(self,
+                 model: Module,
+                 batchsize: int,
+                 logger: Logger,
+                 summary_func: Callable,
+                 dataset: DatasetTest,
+                 threshold: float,
+                 device):
 
-    def loop(self, eval_run):
-        pass
+        self.model = model
+        self.batch_size = batchsize
+        self.logger = logger
+        self.summary_func = summary_func
+        self.dataset = dataset
+        self.threshold = threshold
+        self.device = device
+
+    def loop(self):
+        self.model.eval()
+        all_metrics = []
+        # Two States per User in Test Set
+        for i in range(2):
+            sent_ids = self.dataset.test_sent_ids.to(self.device)
+            attention_masks = self.dataset.test_masks.to(self.device)
+            ground_truth = np.array(self.dataset.test_labels)
+            prediction_scores = np.zeros(ground_truth.shape)
+            test_data = self.dataset.test_data
+            number_of_entries = sent_ids.shape[0]
+
+            with torch.no_grad():
+                pbar = tqdm(
+                    desc=f"[{self.name}] Evaluating", leave=False, total=number_of_entries
+                )
+                cur_pos = 0
+                while cur_pos < number_of_entries:
+                    last_pos = cur_pos
+                    cur_pos += self.batchsize
+                    if cur_pos > number_of_entries:
+                        cur_pos = number_of_entries
+                        out_probs = self.model(sent_ids[last_pos:cur_pos], attention_masks[last_pos:cur_pos])
+                        prediction_scores[last_pos:cur_pos] = out_probs.cpu().numpy()
+                        pbar.update(self.batchsize)
+
+                prediction_labels = prediction_scores.flatten() > self.threshold
+
+                metrics = calculate_test_F1(
+                    ground_truth.flatten(), prediction_labels
+                )
+
+                rouge_scores = calculate_rouge_scores(ground_truth.flatten(), prediction_labels, test_data)
+
+                metrics.update(rouge_scores)
+                all_metrics.append(metrics)
+
+        return all_metrics

@@ -2,16 +2,19 @@ import torch
 from torch.utils.data import Dataset
 from torch import Tensor, LongTensor
 import csv
+from os import walk
+
+from ..utils.bert_utils import preprocessing_for_bert
 
 __all__ = [
     "DatasetUniformNegatives",
-    "DocumentTestSet"
+    "DatasetValidation",
+    "DatasetTest"
 ]
 
 
 class DatasetUniformNegatives(Dataset):
     def __init__(self, pos_list, neg_list, neg_ratio, device, tokenizer):
-        self.tokenizer = tokenizer
 
         pos_tokenized = pos_list.apply((lambda x: tokenizer.encode(x, add_special_tokens=True)))
         max_len = max([len(sent) for sent in pos_tokenized.values])
@@ -21,8 +24,8 @@ class DatasetUniformNegatives(Dataset):
         print('Max length: ', max_len)
 
         print('Tokenizing data...')
-        self.pos_input_ids, self.pos_masks = self.preprocessing_for_bert(pos_list)
-        self.neg_input_ids, self.neg_masks = self.preprocessing_for_bert(neg_list)
+        self.pos_input_ids, self.pos_masks = preprocessing_for_bert(pos_list, max_len, tokenizer)
+        self.neg_input_ids, self.neg_masks = preprocessing_for_bert(neg_list, max_len, tokenizer)
 
         self.neg_ratio = neg_ratio
         self.to(device)
@@ -35,54 +38,18 @@ class DatasetUniformNegatives(Dataset):
         pos_masks = self.pos_masks[idx]
 
         # Generating Negatives
-        neg_idxs = torch.randint(low=0, high=self.neg.shape[0], size=(self.neg_ratio * pos_sent_ids.shape[0],), device=self.neg.device)
+        neg_idxs = torch.randint(low=0, high=self.neg.shape[0], size=(self.neg_ratio * pos_sent_ids.shape[0],),
+                                 device=self.neg.device)
         neg_sent_ids = self.neg_input_ids[neg_idxs]
         neg_masks = self.neg_masks[neg_idxs]
 
         return torch.cat((pos_sent_ids, neg_sent_ids)), torch.cat((pos_masks, neg_masks)), idx.shape[0]
 
     def to(self, device):
-        self.pos = self.pos.to(device)
-        self.neg = self.neg.to(device)
-
-    def preprocessing_for_bert(self, data, max_length):
-        """Perform required preprocessing steps for pretrained BERT.
-        @param    data (np.array): Array of texts to be processed.
-        @return   input_ids (torch.Tensor): Tensor of token ids to be fed to a model.
-        @return   attention_masks (torch.Tensor): Tensor of indices specifying which
-                      tokens should be attended to by the model.
-        """
-        # Create empty lists to store outputs
-        input_ids = []
-        attention_masks = []
-
-        # For every sentence...
-        for sent in data:
-            # `encode_plus` will:
-            #    (1) Tokenize the sentence
-            #    (2) Add the `[CLS]` and `[SEP]` token to the start and end
-            #    (3) Truncate/Pad sentence to max length
-            #    (4) Map tokens to their IDs
-            #    (5) Create attention mask
-            #    (6) Return a dictionary of outputs
-            encoded_sent = self.tokenizer.encode_plus(
-                text=sent,  # Preprocess sentence
-                add_special_tokens=True,  # Add `[CLS]` and `[SEP]`
-                max_length=max_length,  # Max length to truncate/pad
-                pad_to_max_length=True,  # Pad sentence to max length
-                # return_tensors='pt',           # Return PyTorch tensor
-                return_attention_mask=True  # Return attention mask
-            )
-
-            # Add the outputs to the lists
-            input_ids.append(encoded_sent.get('input_ids'))
-            attention_masks.append(encoded_sent.get('attention_mask'))
-
-        # Convert lists to tensors
-        input_ids = torch.tensor(input_ids)
-        attention_masks = torch.tensor(attention_masks)
-
-        return input_ids, attention_masks
+        self.pos_input_ids = self.pos_input_ids.to(device)
+        self.pos_masks = self.pos_masks.to(device)
+        self.neg_input_ids = self.neg_input_ids.to(device)
+        self.neg_masks = self.neg_masks.to(device)
 
     @classmethod
     def from_csv(cls, train_path: str, neg_ratio: int, device, tokenizer):
@@ -100,24 +67,97 @@ class DatasetUniformNegatives(Dataset):
                 if row_list[1] == "1":
                     pos_list.append(row_list[0])
                 else:
-                    neg_list.append(row_list[1])
+                    neg_list.append(row_list[0])
         return cls(pos_list, neg_list, neg_ratio, tokenizer)
 
 
-class DocumentTestSet(Dataset):
-    def __init__(self):
-        pass
+class DatasetValidation(object):
+    def __init__(self, data, labels, tokenizer, device):
 
-    def __len__(self):
-        pass
+        self.labels = labels
+        self.val_data = data
 
-    def __getitem__(self, idx: LongTensor):
-        pass
+        data_tokenized = data.apply((lambda x: tokenizer.encode(x, add_special_tokens=True)))
+        max_len = max([len(sent) for sent in data_tokenized.values])
+
+        print('Max length: ', max_len)
+
+        print('Tokenizing data...')
+        self.val_sent_ids, self.val_masks = preprocessing_for_bert(data, max_len, tokenizer)
+
+        self.to(device)
+
+    # def __len__(self):
+    #     return self.val_sent_ids.shape[0]
+    #
+    # def __getitem__(self, idx: LongTensor):
+    #     val_sent_ids = self.val_sent_ids[idx]
+    #     val_masks = self.val_masks[idx]
+    #
+    #     return val_sent_ids, val_masks, idx.shape[0]
 
     def to(self, device):
-        pass
+        self.val_sent_ids = self.val_sent_ids.to(device)
+        self.val_masks = self.val_masks.to(device)
 
     @classmethod
-    def from_csv(cls, test_dir: str, *args, **kwargs):
+    def from_csv(cls, val_dir: str, tokenizer, device):
+        data = []
+        labels = []
+        val_files = next(walk(val_dir), (None, None, []))[2]
+        print("Loading CSV")
+        with open(val_files[0], newline='') as csv_file:
+            csv_reader = csv.reader(csv_file, delimiter=',')
+            skip_header = True
+            for row in csv_reader:
+                if skip_header:
+                    skip_header = False
+                    continue
+                row_list = row.split(",")
+                data.append(row_list[0])
+                labels.append(row_list[1])
+        return cls(data, labels, tokenizer, device)
 
-        return cls(*args, **kwargs)
+
+class DatasetTest(object):
+    def __init__(self, test_data, test_labels, tokenizer):
+        self.test_sent_ids = []
+        self.test_labels = test_labels
+        self.test_masks = []
+        self.test_data = test_data
+        for data in test_data:
+            data_tokenized = data.apply((lambda x: tokenizer.encode(x, add_special_tokens=True)))
+            max_len = max([len(sent) for sent in data_tokenized.values])
+            data_tokenized = data.apply((lambda x: tokenizer.encode(x, add_special_tokens=True)))
+            max_len = max([len(sent) for sent in data_tokenized.values])
+
+            print('Max length: ', max_len)
+
+            print('Tokenizing data...')
+            data_sent_ids, data_masks = preprocessing_for_bert(data, max_len, tokenizer)
+            self.test_sent_ids.append(data_sent_ids)
+            self.test_masks.append(data_masks)
+
+    @classmethod
+    def from_csv(cls, test_dir: str, tokenizer):
+        test_data = []
+        test_labels = []
+
+        test_files = next(walk(test_dir), (None, None, []))[2]
+        print("Loading CSV")
+        for test_file in test_files:
+            data = []
+            labels = []
+            with open(test_file, newline='') as csv_file:
+                csv_reader = csv.reader(csv_file, delimiter=',')
+                skip_header = True
+                for row in csv_reader:
+                    if skip_header:
+                        skip_header = False
+                        continue
+                    row_list = row.split(",")
+                    data.append(row_list[0])
+                    labels.append(row_list[1])
+            test_data.append(data.copy())
+            test_labels.append(labels.copy())
+        return cls(test_data, test_labels, tokenizer)
