@@ -1,8 +1,9 @@
 import torch
 
 
-def preprocessing_for_bert(self, data, max_length, tokenizer):
+def preprocessing_for_bert(data, max_length, tokenizer):
     """
+    :param tokenizer:
     :param data:
     :param max_length:
     :return:

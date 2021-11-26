@@ -13,6 +13,8 @@ def calculate_optimal_F1(targets, scores) -> float:
     if num_pos == 0:
         return {}
     f1 = 2 * tpr / (1 + tpr + fpr * num_neg / num_pos)
+    # import pdb
+    # pdb.set_trace()
     precision = tpr / (tpr + fpr * num_neg / num_pos)
     recall = list(map(float, list(tpr)))
     precision = list(map(float, list(precision)))

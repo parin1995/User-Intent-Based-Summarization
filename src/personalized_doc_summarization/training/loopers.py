@@ -28,6 +28,7 @@ class EvalLooper(object):
                  batchsize: int,
                  logger: Logger,
                  summary_func: Callable,
+                 loss_fn: Callable,
                  dataset: DatasetValidation = None):
 
         self.model = model
@@ -35,8 +36,9 @@ class EvalLooper(object):
         self.logger = logger
         self.summary_func = summary_func
         self.dataset = dataset
+        self.loss = loss_fn
 
-    def loop(self, eval_run: str):
+    def loop(self, eval_run: str, model):
         self.model.eval()
         if eval_run == "validation":
             sent_ids = self.dataset.val_sent_ids
@@ -50,23 +52,23 @@ class EvalLooper(object):
 
         with torch.no_grad():
             pbar = tqdm(
-                desc=f"[{self.name}] Evaluating", leave=False, total=number_of_entries
+                desc=f"[{eval_run}] Evaluating", leave=False, total=number_of_entries
             )
             cur_pos = 0
             while cur_pos < number_of_entries:
                 last_pos = cur_pos
-                cur_pos += self.batchsize
+                cur_pos += self.batch_size
                 if cur_pos > number_of_entries:
                     cur_pos = number_of_entries
-                    out_probs = self.model(sent_ids[last_pos:cur_pos], attention_masks[last_pos:cur_pos])
-                    prediction_scores[last_pos:cur_pos] = out_probs.cpu().numpy()
-                    pbar.update(self.batchsize)
+                out_probs = self.model(sent_ids[last_pos:cur_pos], attention_masks[last_pos:cur_pos])
+                prediction_scores[last_pos:cur_pos] = out_probs.cpu().numpy().flatten()
+                pbar.update(self.batch_size)
 
-            val_loss = self.loss(prediction_scores, labels=ground_truth, eval=True)
+            #val_loss = self.loss(prediction_scores, labels=ground_truth, eval=True)
             metrics = calculate_optimal_F1(
                 ground_truth.flatten(), prediction_scores.flatten()
             )
-            metrics["val_loss"] = val_loss
+            #metrics["val_loss"] = val_loss
             prediction_labels = prediction_scores > metrics["threshold"]
             rouge_scores = calculate_rouge_scores(ground_truth.flatten(), prediction_labels, val_data)
             metrics.update(rouge_scores)
@@ -96,7 +98,7 @@ class TrainLooper(object):
         self.learning_rate = learning_rate
         self.logger = logger
         self.epochs = epochs
-        self.eval_looper = eval_looper
+        self.eval_loopers = eval_looper
         self.log_interval = log_interval
         self.save_model = save_model
         self.summary_func = summary_func
@@ -108,7 +110,7 @@ class TrainLooper(object):
         self.best_metrics_comparison_functions = {"F1": max}
         self.best_metrics = {}
         self.previous_best = None
-        self.evaluation_runs = ["train_eval", "validation"]
+        self.evaluation_runs = ["validation"]
 
         if self.log_interval is None:
             # by default, log every batch
@@ -146,7 +148,7 @@ class TrainLooper(object):
 
             out_probs = self.model(input_sent_ids, input_attention_masks)
             loss = self.loss_func(out_probs, num_pos_in_batch)
-            self.running_losses.append(loss.detach().item())
+            self.running_loss.append(loss.detach().item())
 
             examples_this_epoch += num_pos_in_batch
             num_batch_passed += 1
@@ -154,7 +156,11 @@ class TrainLooper(object):
             if torch.isnan(loss).any():
                 raise StopLoopingException("NaNs in loss")
 
+            self.looper_metrics["Total Examples"] += examples_this_epoch
+
             loss.backward()
+
+            self.opt.step()
 
             if self.scheduler is not None:
                 self.scheduler.step()
@@ -173,8 +179,6 @@ class TrainLooper(object):
             #         if torch.isnan(param.grad).any():
             #             raise StopLoopingException("NaNs in grad")
 
-            self.opt.step()
-
             last_log = self.log_interval.last
 
             if self.log_interval(self.looper_metrics["Total Examples"]):
@@ -185,14 +189,14 @@ class TrainLooper(object):
                 self.logger.collect({"avg_time_per_batch": time_spend})
 
                 self.logger.collect(self.looper_metrics)
-                mean_loss = sum(self.running_losses) / (
+                mean_loss = sum(self.running_loss) / (
                         self.looper_metrics["Total Examples"] - last_log
                 )
                 metrics = {}
 
                 for eval_run in self.evaluation_runs:
                     for eval_looper in self.eval_loopers:
-                        metrics[eval_run] = eval_looper.loop(eval_run)
+                        metrics[eval_run] = eval_looper.loop(eval_run, self.model)
 
                 metrics["Mean_Train_Loss"] = mean_loss
 
@@ -210,13 +214,14 @@ class TrainLooper(object):
                 )
 
                 self.logger.commit()
-                self.running_losses = []
+                self.running_loss = []
                 self.update_best_metrics(metrics)
                 self.save_if_best_(self.best_metrics["F1"])
                 self.early_stopping(self.best_metrics["F1"])
+
                 self.model.train()
 
-    def update_best_metrics(self, metrics: dict[str, float]) -> None:
+    def update_best_metrics(self, metrics: dict):
         for name, comparison in self.best_metrics_comparison_functions.items():
             if name not in self.best_metrics:
                 for metric, val in metrics['validation'].items():
@@ -229,13 +234,14 @@ class TrainLooper(object):
                     for metric, val in metrics['validation'].items():
                         self.best_metrics[metric] = val
 
-        self.summary_func(
-            {
-                f"[Validation] Best Model {name}": val
-                for name, val in self.best_metrics.items()
+        if self.summary_func is not None:
+            self.summary_func(
+                {
+                    f"[Validation] Best Model {name}": val
+                    for name, val in self.best_metrics.items()
 
-            }
-        )
+                }
+            )
 
     def save_if_best_(self, best_metric) -> None:
         if best_metric != self.previous_best:
@@ -269,24 +275,24 @@ class TestLooper(object):
         for i in range(2):
             sent_ids = self.dataset.test_sent_ids.to(self.device)
             attention_masks = self.dataset.test_masks.to(self.device)
-            ground_truth = np.array(self.dataset.test_labels)
+            ground_truth = np.array(self.dataset.test_labels, dtype=np.int64)
             prediction_scores = np.zeros(ground_truth.shape)
             test_data = self.dataset.test_data
             number_of_entries = sent_ids.shape[0]
 
             with torch.no_grad():
                 pbar = tqdm(
-                    desc=f"[{self.name}] Evaluating", leave=False, total=number_of_entries
+                    desc=f"Test Evaluating", leave=False, total=number_of_entries
                 )
                 cur_pos = 0
                 while cur_pos < number_of_entries:
                     last_pos = cur_pos
-                    cur_pos += self.batchsize
+                    cur_pos += self.batch_size
                     if cur_pos > number_of_entries:
                         cur_pos = number_of_entries
                         out_probs = self.model(sent_ids[last_pos:cur_pos], attention_masks[last_pos:cur_pos])
                         prediction_scores[last_pos:cur_pos] = out_probs.cpu().numpy()
-                        pbar.update(self.batchsize)
+                        pbar.update(self.batch_size)
 
                 prediction_labels = prediction_scores.flatten() > self.threshold
 

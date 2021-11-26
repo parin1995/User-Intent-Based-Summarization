@@ -1,6 +1,6 @@
 import typer
 from typing import List, Optional
-from .train import train_setup
+from .training.train import train_setup
 
 app = typer.Typer(help="Training Parameters for Personalized Document Summarization")
 
@@ -11,17 +11,16 @@ def train(
         train_file_name: str = typer.Option(...),
         epoch: int = typer.Option(10),
         learning_rate: float = typer.Option(0.01),
-        cuda: bool = typer.Option(False, "--cude/--no-cuda"),
+        cuda: bool = typer.Option(True, "--cuda/--no-cuda"),
         wandb: bool = typer.Option(False, "--wandb/--no-wandb"),
         neg_ratio: int = typer.Option(2),
-        model: str = typer.Option(...),
+        model: str = typer.Option("distilbert-base-uncased"),
         freeze_bert: bool = typer.Option(False, "--freeze/--no-freeze"),
         seed: int = typer.Option(42),
         loss_fn: str = typer.Option("UnweightedBCE"),
         hidden_dim: int = typer.Option(50),
         log_batch_size: int = typer.Option(3),
-        patience: int = typer.Option(10),
-        output_dir: str = typer.Option(None)
+        patience: int = typer.Option(10)
 ):
     config = {}
 
@@ -46,11 +45,13 @@ def train(
     config["hidden_dim"] = hidden_dim
     config["log_batch_size"] = log_batch_size
     config["patience"] = patience
-    config["output_dir"] = output_dir
 
     # Setup Training
     train_setup(config)
 
+@app.command()
+def test(todo: str):
+    print("This is testing script")
 
-if __name__ == "__main__":
+def main():
     app()

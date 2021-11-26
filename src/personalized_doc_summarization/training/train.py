@@ -6,9 +6,9 @@ import random
 import json
 from pathlib import Path
 from ..utils.train_utils import cuda_if_available, EarlyStopping, ModelCheckpoint
-from dataset import DatasetUniformNegatives, DatasetValidation
-from loss import BCEWithWeightedLoss, BCELoss
-from loopers import TrainLooper, EvalLooper
+from .dataset import DatasetUniformNegatives, DatasetValidation
+from .loss import BCEWithWeightedLoss, BCELoss
+from .loopers import TrainLooper, EvalLooper
 from ..models.bert import FineTuneBert
 from ..utils.tensordataloader import TensorDataLoader
 from ..utils.loggers import WandBLogger, Logger
@@ -31,10 +31,10 @@ def train_setup(config: dict):
         wandb.config.update(config, allow_val_change=True)
         config = wandb.config
         run_dir = Path(wandb.run.dir)
-        logger = WandBLogger
+        logger = WandBLogger()
         summary_func = wandb.run.summary.update
     else:
-        logger = Logger
+        logger = Logger()
         summary_func = None
         run_dir = Path(".")
 
@@ -43,7 +43,7 @@ def train_setup(config: dict):
 
     device = cuda_if_available(use_cuda=config["cuda"])
 
-    bert_model, tokenizer = setup_bert(config, device)
+    bert_model, tokenizer = setup_bert(config)
 
     train_dataset = DatasetUniformNegatives.from_csv(
         train_path=config["train_file"],
@@ -92,6 +92,7 @@ def train_setup(config: dict):
             batchsize=2 ** config["log_batch_size"],
             logger=logger,
             summary_func=summary_func,
+            loss_fn=loss_function,
             dataset=val_dataset
         )
     ]
@@ -127,8 +128,8 @@ def save_model_metrics(best_model, best_metrics, config):
     else:
         random_hex = uuid.uuid4().hex
 
-    if config["output_dir"] is None:
-        output_dir = f'models/{random_hex}/'
+    output_dir = f'models/{random_hex}/'
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     torch.save(best_model_state_dict, output_dir + "trained_model.pt")
 
@@ -136,6 +137,8 @@ def save_model_metrics(best_model, best_metrics, config):
         output = json.dumps(dict(config))
         f.write(f"{output}\n")
         f.write(json.dumps(best_metrics))
+
+    print(f"Output_Dir: {output_dir}")
 
 
 def setup_bert(config: dict):
