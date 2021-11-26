@@ -3,7 +3,7 @@ import wandb
 from torch import Tensor
 from torch.nn import Module
 
-__all__ =[
+__all__ = [
     "BCEWithWeightedLoss"
 ]
 
@@ -20,7 +20,7 @@ class BCEWithWeightedLoss(Module):
         """
         if not eval:
             pos_probs = probs[:num_pos]
-            neg_probs = probs[num_pos+1:]
+            neg_probs = probs[num_pos + 1:]
             # TODO: Use the formula discussed in the ipad
             # This is to calculate the training loss
         else:
@@ -30,30 +30,25 @@ class BCEWithWeightedLoss(Module):
             pass
 
 
-# Example Here:
-class BCEWithLogsNegativeSamplingLoss(Module):
-    def __init__(self, negative_weight: float = 0.5):
+class BCELoss(Module):
+    def __init__(self):
         super().__init__()
-        self.negative_weight = negative_weight
 
-    def forward(self, log_prob_scores: Tensor) -> Tensor:
+    def forward(self, probs: Tensor, num_pos: int = None, labels: Tensor = None, eval: bool = False):
         """
-        Returns a weighted BCE loss where:
-            (1 - negative_weight) * pos_loss + negative_weight * weighted_average(neg_loss)
-
-        :param log_prob_scores: Tensor of shape (..., 1+K) where [...,0] is the score for positive examples and [..., 1:] are negative
-        :return: weighted BCE loss
+                pos_probs: Tensor => (num_pos,)
+                neg_probs: Tensor => (num_pos*neg_ratio,)
         """
-
-        log_prob_pos = log_prob_scores[..., 0]
-        log_prob_neg = log_prob_scores[..., 1:]
-        pos_loss = -log_prob_pos
-        neg_loss = -log1mexp(log_prob_neg)
-        logit_prob_neg = log_prob_neg + neg_loss
-        weights = F.softmax(logit_prob_neg, dim=-1)
-        weighted_average_neg_loss = (weights * neg_loss).sum(dim=-1)
-        final_loss = (
-            1 - self.negative_weight
-        ) * pos_loss + self.negative_weight * weighted_average_neg_loss
-
-        return final_loss
+        if not eval:
+            pos_probs = probs[:num_pos]
+            neg_probs = probs[num_pos + 1:]
+            pos_loss = -torch.log(pos_probs)
+            neg_loss = -torch.log(1 - neg_probs)
+            return torch.sum(pos_loss) + torch.sum(neg_loss)
+        else:
+            # This is to calculate the Validation loss
+            pos_idxs = torch.nonzero(labels == 1).flatten()
+            neg_idxs = torch.nonzero((labels == 0)).flatten()
+            pos_loss = -torch.log(probs[pos_idxs])
+            neg_loss = -torch.log(probs[neg_idxs])
+            return torch.sum(pos_loss) + torch.sum(neg_loss)

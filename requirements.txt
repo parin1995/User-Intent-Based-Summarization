@@ -6,3 +6,4 @@ numpy
 typer
 scikit-learn
 rouge-score
+transformers
