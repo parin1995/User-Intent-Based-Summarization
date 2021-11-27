@@ -20,7 +20,8 @@ def train(
         loss_fn: str = typer.Option("UnweightedBCE"),
         hidden_dim: int = typer.Option(50),
         log_batch_size: int = typer.Option(3),
-        patience: int = typer.Option(10)
+        patience: int = typer.Option(10),
+        pos_weight: float = typer.Option(0.75)
 ):
     config = {}
 
@@ -45,7 +46,7 @@ def train(
     config["hidden_dim"] = hidden_dim
     config["log_batch_size"] = log_batch_size
     config["patience"] = patience
-
+    config["positive_weight"]= pos_weight
     # Setup Training
     train_setup(config)
 

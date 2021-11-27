@@ -20,14 +20,22 @@ class BCEWithWeightedLoss(Module):
         """
         if not eval:
             pos_probs = probs[:num_pos]
-            neg_probs = probs[num_pos + 1:]
+            neg_probs = probs[num_pos:]
             # TODO: Use the formula discussed in the ipad
             # This is to calculate the training loss
+            pos_loss = -torch.log(pos_probs)
+            neg_loss = -torch.log(1 - neg_probs)
+            return self.pos_weight*torch.sum(pos_loss) + (1-self.pos_weight)*torch.sum(neg_loss)
         else:
             # TODO: Use the Normal Binary Cross Entropy Formula (But Weighted as in the if condition)
             #  with the labels parameter and the probs argument
             # This is to calculate the Validation loss
-            pass
+            pos_idxs = torch.nonzero(labels == 1).flatten()
+            neg_idxs = torch.nonzero((labels == 0)).flatten()
+            pos_loss = -torch.log(probs[pos_idxs])
+            neg_loss = -torch.log(probs[neg_idxs])
+            return self.pos_weight*torch.sum(pos_loss) + (1-self.pos_weight)*torch.sum(neg_loss)
+
 
 
 class BCELoss(Module):
@@ -41,7 +49,7 @@ class BCELoss(Module):
         """
         if not eval:
             pos_probs = probs[:num_pos]
-            neg_probs = probs[num_pos + 1:]
+            neg_probs = probs[num_pos:]
             pos_loss = -torch.log(pos_probs)
             neg_loss = -torch.log(1 - neg_probs)
             return torch.sum(pos_loss) + torch.sum(neg_loss)

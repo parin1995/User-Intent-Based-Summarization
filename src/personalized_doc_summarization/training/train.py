@@ -70,6 +70,9 @@ def train_setup(config: dict):
 
     if config["loss_fn"] == "UnweightedBCE":
         loss_function = BCELoss()
+    # Weighted loss with weight value as hyper parameter
+    elif config["loss_fn"] == "WeightedBCE":
+        loss_function = BCEWithWeightedLoss(config["positive_weight"])
 
     train_dataloader = TensorDataLoader(
         train_dataset, batch_size=2 ** config["log_batch_size"], shuffle=True
