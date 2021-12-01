@@ -13,7 +13,7 @@ import time
 
 from ..utils.exceptions import StopLoopingException, EarlyStoppingException
 from ..utils.train_utils import IntervalConditional
-from .metrics import calculate_optimal_F1, calculate_rouge_scores, calculate_test_F1
+from .metrics import calculate_optimal_F1, calculate_rouge_scores, calculate_test_F1, calculate_rouge_scores_test
 from .dataset import DatasetValidation, DatasetTest
 
 import torch
@@ -254,16 +254,12 @@ class TestLooper(object):
     def __init__(self,
                  model: Module,
                  batchsize: int,
-                 logger: Logger,
-                 summary_func: Callable,
                  dataset: DatasetTest,
                  threshold: float,
                  device):
 
         self.model = model
         self.batch_size = batchsize
-        self.logger = logger
-        self.summary_func = summary_func
         self.dataset = dataset
         self.threshold = threshold
         self.device = device
@@ -272,37 +268,74 @@ class TestLooper(object):
         self.model.eval()
         all_metrics = []
         # Two States per User in Test Set
-        for i in range(2):
-            sent_ids = self.dataset.test_sent_ids.to(self.device)
-            attention_masks = self.dataset.test_masks.to(self.device)
-            ground_truth = np.array(self.dataset.test_labels, dtype=np.int64)
-            prediction_scores = np.zeros(ground_truth.shape)
-            test_data = self.dataset.test_data
-            number_of_entries = sent_ids.shape[0]
 
-            with torch.no_grad():
-                pbar = tqdm(
-                    desc=f"Test Evaluating", leave=False, total=number_of_entries
-                )
-                cur_pos = 0
-                while cur_pos < number_of_entries:
-                    last_pos = cur_pos
-                    cur_pos += self.batch_size
-                    if cur_pos > number_of_entries:
-                        cur_pos = number_of_entries
-                        out_probs = self.model(sent_ids[last_pos:cur_pos], attention_masks[last_pos:cur_pos])
-                        prediction_scores[last_pos:cur_pos] = out_probs.cpu().numpy()
-                        pbar.update(self.batch_size)
+        # FOR TEST SUMMARY 1
+        sent_ids_1 = self.dataset.test_sent_ids_1.to(self.device)
+        attention_masks_1 = self.dataset.test_masks_1.to(self.device)
+        ground_truth_1 = np.array(self.dataset.test_labels_1, dtype=np.int64)
+        prediction_scores_1 = np.zeros(ground_truth_1.shape)
+        test_data_1 = self.dataset.test_data_1
+        number_of_entries_1 = sent_ids_1.shape[0]
 
-                prediction_labels = prediction_scores.flatten() > self.threshold
+        sent_ids_2 = self.dataset.test_sent_ids_2.to(self.device)
+        attention_masks_2 = self.dataset.test_masks_2.to(self.device)
+        ground_truth_2 = np.array(self.dataset.test_labels_2, dtype=np.int64)
+        prediction_scores_2 = np.zeros(ground_truth_2.shape)
+        test_data_2 = self.dataset.test_data_2
+        number_of_entries_2 = sent_ids_2.shape[0]
 
-                metrics = calculate_test_F1(
-                    ground_truth.flatten(), prediction_labels
-                )
+        with torch.no_grad():
+            pbar_1 = tqdm(
+                desc=f"Test Evaluating", leave=False, total=number_of_entries_1
+            )
+            cur_pos = 0
+            while cur_pos < number_of_entries_1:
+                last_pos = cur_pos
+                cur_pos += self.batch_size
+                if cur_pos > number_of_entries_1:
+                    cur_pos = number_of_entries_1
+                out_probs_1 = self.model(sent_ids_1[last_pos:cur_pos], attention_masks_1[last_pos:cur_pos])
+                prediction_scores_1[last_pos:cur_pos] = out_probs_1.cpu().numpy().flatten()
+                pbar_1.update(self.batch_size)
 
-                rouge_scores = calculate_rouge_scores(ground_truth.flatten(), prediction_labels, test_data)
+            print(prediction_scores_1)
+            prediction_labels_1 = prediction_scores_1.flatten() > self.threshold
 
-                metrics.update(rouge_scores)
-                all_metrics.append(metrics)
+            metrics_1 = calculate_test_F1(
+                ground_truth_1.flatten(), prediction_labels_1
+            )
 
+            rouge_scores_1 = calculate_rouge_scores_test(ground_truth_1.flatten(), prediction_labels_1, test_data_1)
+
+
+            metrics_1.update(rouge_scores_1)
+            all_metrics.append(metrics_1)
+
+            # FOR TEST SUMMARY 2
+
+            pbar_2 = tqdm(
+                desc=f"Test Evaluating", leave=False, total=number_of_entries_2
+            )
+            cur_pos = 0
+            while cur_pos < number_of_entries_2:
+                last_pos = cur_pos
+                cur_pos += self.batch_size
+                if cur_pos > number_of_entries_2:
+                    cur_pos = number_of_entries_2
+                out_probs_2 = self.model(sent_ids_2[last_pos:cur_pos], attention_masks_2[last_pos:cur_pos])
+                prediction_scores_2[last_pos:cur_pos] = out_probs_2.cpu().numpy().flatten()
+                pbar_2.update(self.batch_size)
+
+            print(prediction_scores_2)
+            prediction_labels_2 = prediction_scores_2.flatten() > self.threshold
+
+            metrics_2 = calculate_test_F1(
+                ground_truth_2.flatten(), prediction_labels_2
+            )
+
+            rouge_scores_2 = calculate_rouge_scores_test(ground_truth_2.flatten(), prediction_labels_2, test_data_2)
+
+            metrics_2.update(rouge_scores_2)
+            all_metrics.append(metrics_2)
+        print("Length of all metrics...", len(all_metrics))
         return all_metrics

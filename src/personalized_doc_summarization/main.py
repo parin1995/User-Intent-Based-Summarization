@@ -1,6 +1,6 @@
 import typer
 from typing import List, Optional
-from .training.train import train_setup
+from .training.train import train_setup, test_setup
 
 app = typer.Typer(help="Training Parameters for Personalized Document Summarization")
 
@@ -21,7 +21,7 @@ def train(
         hidden_dim: int = typer.Option(50),
         log_batch_size: int = typer.Option(3),
         patience: int = typer.Option(10),
-        pos_weight: float = typer.Option(0.75)
+        pos_weight: float = typer.Option(0.5)
 ):
     config = {}
 
@@ -46,13 +46,38 @@ def train(
     config["hidden_dim"] = hidden_dim
     config["log_batch_size"] = log_batch_size
     config["patience"] = patience
-    config["positive_weight"]= pos_weight
+    config["positive_weight"] = pos_weight
     # Setup Training
     train_setup(config)
 
+
 @app.command()
-def test(todo: str):
+def test(
+        data_dir: str = typer.Option(...),
+        cuda: bool = typer.Option(True, "--cuda/--no-cuda"),
+        model: str = typer.Option("distilbert-base-uncased"),
+        seed: int = typer.Option(42),
+        best_model_dir: str = typer.Option(...),
+        threshold: float = typer.Option(0.75),
+        log_batch_size: int = typer.Option(3),
+        freeze_bert: bool = typer.Option(False, "--freeze/--no-freeze"),
+):
     print("This is testing script")
+    config = {}
+    config["test_dir"] = data_dir
+
+    # Setup Params
+    config["cuda"] = cuda
+    config["seed"] = seed
+
+    config["model"] = model
+    config["best_model_dir"] = best_model_dir
+    config["threshold"]= threshold
+    config["log_batch_size"]=log_batch_size
+    config["freeze_bert"]=freeze_bert
+    # Setup Testing
+    test_setup(config)
+
 
 def main():
     app()

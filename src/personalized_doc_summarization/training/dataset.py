@@ -111,30 +111,55 @@ class DatasetValidation(object):
 
 
 class DatasetTest(object):
-    def __init__(self, test_data, test_labels, tokenizer):
-        self.test_sent_ids = []
-        self.test_labels = test_labels
-        self.test_masks = []
-        self.test_data = test_data
-        for data in test_data:
-            data_tokenized = [tokenizer.encode(sent, add_special_tokens=True) for sent in data]
-            max_len = max([len(sent) for sent in data_tokenized])
+    def __init__(self, test_data, test_labels, tokenizer, device):
+        print("test_data shape",len(test_data))
+        print("test_labels shape",len(test_labels))
+        self.test_sent_ids_1 = []
+        self.test_labels_1 = test_labels[0]
+        self.test_masks_1 = []
+        self.test_sent_ids_2 = []
+        self.test_labels_2 = test_labels[1]
+        self.test_masks_2 = []
+        self.test_data_1 = test_data[0]
+        self.test_data_2 = test_data[1]
 
-            print('Max length: ', max_len)
+        # For test file 1
+        data_tokenized_1 = [tokenizer.encode(sent, add_special_tokens=True) for sent in test_data[0]]
+        max_len_1 = max([len(sent) for sent in data_tokenized_1])
 
-            print('Tokenizing data...')
-            data_sent_ids, data_masks = preprocessing_for_bert(data, max_len, tokenizer)
-            self.test_sent_ids.append(data_sent_ids)
-            self.test_masks.append(data_masks)
+        print('Max length of test file 1: ', max_len_1)
+
+        print('Tokenizing data for test file 1...')
+        self.test_sent_ids_1, self.test_masks_1 = preprocessing_for_bert(test_data[0], max_len_1, tokenizer)
+
+        # For test file 2
+        data_tokenized_2 = [tokenizer.encode(sent, add_special_tokens=True) for sent in test_data[1]]
+        max_len_2 = max([len(sent) for sent in data_tokenized_2])
+
+        print('Max length of test file 2: ', max_len_2)
+
+        print('Tokenizing data for test file 2...')
+        self.test_sent_ids_2, self.test_masks_2 = preprocessing_for_bert(test_data[1], max_len_2, tokenizer)
+
+        self.to(device)
+
+    def to(self, device):
+        self.test_sent_ids_1 = self.test_sent_ids_1.to(device)
+        self.test_masks_1 = self.test_masks_1.to(device)
+        self.test_sent_ids_2 = self.test_sent_ids_2.to(device)
+        self.test_masks_2 = self.test_masks_2.to(device)
 
     @classmethod
-    def from_csv(cls, test_dir: str, tokenizer):
+    def from_csv(cls, test_dir: str, tokenizer, device):
         test_data = []
         test_labels = []
 
         test_files = next(walk(test_dir), (None, None, []))[2]
+        print("test file path......",test_files)
         print("Loading Test CSV")
         for test_file in test_files:
+            if not test_file.startswith("test"):
+                continue
             data = []
             labels = []
             with open(test_dir + test_file, newline='') as csv_file:
@@ -148,4 +173,4 @@ class DatasetTest(object):
                     labels.append(row[1])
             test_data.append(data.copy())
             test_labels.append(labels.copy())
-        return cls(test_data, test_labels, tokenizer)
+        return cls(test_data, test_labels, tokenizer, device)

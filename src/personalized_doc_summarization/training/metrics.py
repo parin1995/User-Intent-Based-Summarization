@@ -42,4 +42,25 @@ def calculate_rouge_scores(target_labels, predicted_labels, data):
 
 
 def calculate_test_F1(target_labels, pred_labels):
-    return sklearn.metrics.f1_score(target_labels, pred_labels)
+    return {"F1" : sklearn.metrics.f1_score(target_labels, pred_labels)}
+
+
+def calculate_rouge_scores_test(target_labels, predicted_labels, data):
+
+    target_summary_list = [data[i] for i in range(len(data)) if i in np.nonzero(target_labels == 1)[0]]
+    target_summary = " ".join(target_summary_list)
+    pred_summary_list = [data[i] for i in range(len(data)) if i in np.nonzero(predicted_labels == 1)[0]]
+    predicted_summary = " ".join(pred_summary_list)
+
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeLsum'], use_stemmer=True)
+    scores = scorer.score(target_summary, predicted_summary)
+
+    rouge_scores = {
+        "rouge1_F1": scores["rouge1"].fmeasure,
+        "rouge2_F1": scores["rouge2"].fmeasure,
+        "rougeL_F1": scores["rougeLsum"].fmeasure,
+        "target summary": target_summary,
+        "predicted summary": predicted_summary,
+    }
+
+    return rouge_scores

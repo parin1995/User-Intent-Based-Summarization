@@ -6,9 +6,9 @@ import random
 import json
 from pathlib import Path
 from ..utils.train_utils import cuda_if_available, EarlyStopping, ModelCheckpoint
-from .dataset import DatasetUniformNegatives, DatasetValidation
+from .dataset import DatasetUniformNegatives, DatasetValidation, DatasetTest
 from .loss import BCEWithWeightedLoss, BCELoss
-from .loopers import TrainLooper, EvalLooper
+from .loopers import TrainLooper, EvalLooper, TestLooper
 from ..models.bert import FineTuneBert
 from ..utils.tensordataloader import TensorDataLoader
 from ..utils.loggers import WandBLogger, Logger
@@ -121,6 +121,44 @@ def train_setup(config: dict):
 
     print("Training Complete!!!")
 
+
+def test_setup(config: dict):
+    # For reproducibility
+    set_seed(config["seed"])
+    bert_model, tokenizer = setup_bert(config)
+    device = cuda_if_available(use_cuda=config["cuda"])
+
+    test_dataset = DatasetTest.from_csv(
+        test_dir=config["test_dir"],
+        tokenizer=tokenizer,
+        device=device
+    )
+    print("Loaded Test Data")
+
+    best_model_dir = config["best_model_dir"]
+    model = FineTuneBert(bert_model,
+                         input_dim=768,
+                         hidden_dim=None,
+                         output_dim=1,
+                         freeze_bert=config["freeze_bert"])
+    model.load_state_dict(torch.load(best_model_dir))
+    model.eval()
+    #model.to(device)
+    print("Loaded model")
+
+    test_loopers =TestLooper(
+            model=model,
+            batchsize=2 ** config["log_batch_size"],
+            # logger=logger,
+            # summary_func=summary_func,
+            # loss_fn=loss_function,
+            threshold=config["threshold"],
+            dataset=test_dataset,
+            device=device
+        )
+
+    best_metrics = test_loopers.loop()
+    print(best_metrics)
 
 def save_model_metrics(best_model, best_metrics, config):
     best_model_state_dict = {
